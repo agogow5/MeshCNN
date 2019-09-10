@@ -70,7 +70,6 @@ class Mesh:
         self.pool_count += 1
         self.export()
 
-
     def export(self, file=None, vcolor=None):
         if file is None:
             if self.export_folder:
