@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+
 class MeshConv(nn.Module):
     """ Computes convolution between edges and 4 incident (1-ring) edge neighbors
     in the forward pass:
@@ -18,8 +19,12 @@ class MeshConv(nn.Module):
         return self.forward(edge_f, mesh)
 
     def forward(self, x, mesh):
-        x = x.squeeze(-1)
-        G = torch.cat([self.pad_gemm(i, x.shape[2], x.device) for i in mesh], 0)
+        # print('debug1: ', x.shape)
+        x = x.squeeze(-1)  # # x.shape=[16, 5, 750] 5个特征（二面角、两个对角、两个比例）
+        # print('debug2: ', x.shape)
+        # print('debug3: ', mesh.shape)
+
+        G = torch.cat([self.pad_gemm(i, x.shape[2], x.device) for i in mesh], 0)  # # 将1个 batch 中的 16 个 model 拼在一起。 【16， 750， 5】 #750=edge 的数目  #5 自己+4个 1-ring bn 的 id。
         # build 'neighborhood image' and apply convolution
         G = self.create_GeMM(x, G)
         x = self.conv(G)
@@ -28,12 +33,12 @@ class MeshConv(nn.Module):
     def flatten_gemm_inds(self, Gi):
         (b, ne, nn) = Gi.shape
         ne += 1
-        batch_n = torch.floor(torch.arange(b * ne, device=Gi.device).float() / ne).view(b, ne)
+        batch_n = torch.floor(torch.arange(b * ne, device=Gi.device).float() / ne).view(b, ne)  # #[[0,0, ..., 0], ..., [15, ..., 15]]
         add_fac = batch_n * ne
         add_fac = add_fac.view(b, ne, 1)
         add_fac = add_fac.repeat(1, 1, nn)
         # flatten Gi
-        Gi = Gi.float() + add_fac[:, 1:, :]
+        Gi = Gi.float() + add_fac[:, 1:, :]  # # 每一个 mesh 的 edge_id 在每一轮 epoch 中都变成独一无二。
         return Gi
 
     def create_GeMM(self, x, Gi):
@@ -44,17 +49,17 @@ class MeshConv(nn.Module):
         """
         Gishape = Gi.shape
         # pad the first row of  every sample in batch with zeros
-        padding = torch.zeros((x.shape[0], x.shape[1], 1), requires_grad=True, device=x.device)
+        padding = torch.zeros((x.shape[0], x.shape[1], 1), requires_grad=True, device=x.device)  # # todo: 这里 padding 的目的是什么？
         # padding = padding.to(x.device)
         x = torch.cat((padding, x), dim=2)
-        Gi = Gi + 1 #shift
+        Gi = Gi + 1  # shift   # # +1 的目的是因为 上面使用了 padding，整体的的顺序发生改变。
 
         # first flatten indices
         Gi_flat = self.flatten_gemm_inds(Gi)
-        Gi_flat = Gi_flat.view(-1).long()
+        Gi_flat = Gi_flat.view(-1).long()  # # Gi_flat.shape = 60000
         #
         odim = x.shape
-        x = x.permute(0, 2, 1).contiguous()
+        x = x.permute(0, 2, 1).contiguous()  # # batches x edges x features  16x751x5
         x = x.view(odim[0] * odim[2], odim[1])
 
         f = torch.index_select(x, dim=0, index=Gi_flat)
@@ -77,8 +82,8 @@ class MeshConv(nn.Module):
         """
         padded_gemm = torch.tensor(m.gemm_edges, device=device).float()
         padded_gemm = padded_gemm.requires_grad_()
-        padded_gemm = torch.cat((torch.arange(m.edges_count, device=device).float().unsqueeze(1), padded_gemm), dim=1)
+        padded_gemm = torch.cat((torch.arange(m.edges_count, device=device).float().unsqueeze(1), padded_gemm), dim=1)  # # 将 edge_id 与 padded_gemm 进行拼接
         # pad using F
-        padded_gemm = F.pad(padded_gemm, (0, 0, 0, xsz - m.edges_count), "constant", 0)
+        padded_gemm = F.pad(padded_gemm, (0, 0, 0, xsz - m.edges_count), "constant", 0)  # # 给图像的上下左右 添加 pad
         padded_gemm = padded_gemm.unsqueeze(0)
         return padded_gemm

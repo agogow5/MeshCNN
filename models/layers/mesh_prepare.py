@@ -14,7 +14,7 @@ def fill_mesh(mesh2fill, file: str, opt):
                             filename=mesh_data.filename, sides=mesh_data.sides,
                             edge_lengths=mesh_data.edge_lengths, edge_areas=mesh_data.edge_areas,
                             features=mesh_data.features)
-    mesh2fill.vs = mesh_data['vs']
+    mesh2fill.vs = mesh_data['vs']  # # vertexs
     mesh2fill.edges = mesh_data['edges']
     mesh2fill.gemm_edges = mesh_data['gemm_edges']
     mesh2fill.edges_count = int(mesh_data['edges_count'])
@@ -76,12 +76,13 @@ def fill_from_file(mesh, file):
             vs.append([float(v) for v in splitted_line[1:4]])
         elif splitted_line[0] == 'f':
             face_vertex_ids = [int(c.split('/')[0]) for c in splitted_line[1:]]
+            # # face_vertex_ids = [int(c) for c in splitted_line[1:]]
             assert len(face_vertex_ids) == 3
             face_vertex_ids = [(ind - 1) if (ind >= 0) else (len(vs) + ind)
                                for ind in face_vertex_ids]
             faces.append(face_vertex_ids)
-    f.close()
     vs = np.asarray(vs)
+    f.close()
     faces = np.asarray(faces, dtype=int)
     assert np.logical_and(faces >= 0, faces < len(vs)).all()
     return vs, faces
@@ -98,6 +99,8 @@ def remove_non_manifolds(mesh, faces):
             continue
         faces_edges = []
         is_manifold = False
+        # # 这里用到半边结构。 对于相邻的两个 faces, 它们相交的那条变的edge是不一样的（前后顺序相反）。
+        # # 如果这个时候再来第三条共用边，则不满足 manifolds
         for i in range(3):
             cur_edge = (face[i], face[(i + 1) % 3])
             if cur_edge in edges_set:
@@ -115,7 +118,7 @@ def remove_non_manifolds(mesh, faces):
 
 def build_gemm(mesh, faces, face_areas):
     mesh.ve = [[] for _ in mesh.vs]
-    edge_nb = []
+    edge_nb = []  # # nb neighbor
     sides = []
     edge2key = dict()
     edges = []
@@ -127,26 +130,29 @@ def build_gemm(mesh, faces, face_areas):
             cur_edge = (face[i], face[(i + 1) % 3])
             faces_edges.append(cur_edge)
         for idx, edge in enumerate(faces_edges):
-            edge = tuple(sorted(list(edge)))
+            edge = tuple(sorted(list(edge)))  # # TODO: 这里对每条边的前后顺序进行排序的目的是什么？
             faces_edges[idx] = edge
             if edge not in edge2key:
-                edge2key[edge] = edges_count
+                edge2key[edge] = edges_count  # # 给每条边赋一个 id， 从 0 开始
                 edges.append(list(edge))
                 edge_nb.append([-1, -1, -1, -1])
                 sides.append([-1, -1, -1, -1])
-                mesh.ve[edge[0]].append(edges_count)
+                mesh.ve[edge[0]].append(edges_count)  # # 在 edge 的两个点所对应的 ve 的位置添加 【边的 id】
                 mesh.ve[edge[1]].append(edges_count)
                 mesh.edge_areas.append(0)
                 nb_count.append(0)
                 edges_count += 1
-            mesh.edge_areas[edge2key[edge]] += face_areas[face_id] / 3
+            mesh.edge_areas[edge2key[edge]] += face_areas[face_id] / 3  # # edge 面积用 face 面积的 1/3 来表示
         for idx, edge in enumerate(faces_edges):
+            # # edge_nb 是对于编号为【key】的边而言，记录与其相邻的4条边的【key】。 因此 edge_nb 的最后一维大小是 4
+            # # 在一个 face 中，这样的 边 最多两条，因此 nb_count[key] += 2
+            # # nb_count[key] 表示 已经记录的与编号为 【key】的边相邻的边的数目。 最大为4
             edge_key = edge2key[edge]
             edge_nb[edge_key][nb_count[edge_key]] = edge2key[faces_edges[(idx + 1) % 3]]
             edge_nb[edge_key][nb_count[edge_key] + 1] = edge2key[faces_edges[(idx + 2) % 3]]
             nb_count[edge_key] += 2
         for idx, edge in enumerate(faces_edges):
-            edge_key = edge2key[edge]
+            edge_key = edge2key[edge]  # # TODO: side 理解！！！！！！！！！！！！
             sides[edge_key][nb_count[edge_key] - 2] = nb_count[edge2key[faces_edges[(idx + 1) % 3]]] - 1
             sides[edge_key][nb_count[edge_key] - 1] = nb_count[edge2key[faces_edges[(idx + 2) % 3]]] - 2
     mesh.edges = np.array(edges, dtype=np.int32)
@@ -154,13 +160,14 @@ def build_gemm(mesh, faces, face_areas):
     mesh.sides = np.array(sides, dtype=np.int64)
     mesh.edges_count = edges_count
     mesh.edge_areas = np.array(mesh.edge_areas, dtype=np.float32) / np.sum(face_areas) #todo whats the difference between edge_areas and edge_lenghts?
-
+    # # TODO; mesh.edge_areas 想表达什么？
 
 def compute_face_normals_and_areas(mesh, faces):
-    face_normals = np.cross(mesh.vs[faces[:, 1]] - mesh.vs[faces[:, 0]],
+    face_normals = np.cross(mesh.vs[faces[:, 1]] - mesh.vs[faces[:, 0]],  # # 点做差求向量。两个向量再进行叉积。
                             mesh.vs[faces[:, 2]] - mesh.vs[faces[:, 1]])
-    face_areas = np.sqrt((face_normals ** 2).sum(axis=1))
+    face_areas = np.sqrt((face_normals ** 2).sum(axis=1))  # # 叉积出来是个向量。 求其长度，再除以 2 就是面积。
     face_normals /= face_areas[:, np.newaxis]
+    # # 化为标准向量。np.newaxis 添加一个维度。 [[], ..., [], []] 这样就可以与 normal 的 shape 对齐
     assert (not np.any(face_areas[:, np.newaxis] == 0)), 'has zero area face: %s' % mesh.filename
     face_areas *= 0.5
     return face_normals, face_areas
@@ -296,7 +303,7 @@ def get_edge_faces(faces):
 
 
 def set_edge_lengths(mesh, edge_points=None):
-    if edge_points is not None:
+    if edge_points is not None:  # # TODO:为啥是 not None
         edge_points = get_edge_points(mesh)
     edge_lengths = np.linalg.norm(mesh.vs[edge_points[:, 0]] - mesh.vs[edge_points[:, 1]], ord=2, axis=1)
     mesh.edge_lengths = edge_lengths
@@ -321,7 +328,7 @@ def dihedral_angle(mesh, edge_points):
     normals_a = get_normals(mesh, edge_points, 0)
     normals_b = get_normals(mesh, edge_points, 3)
     dot = np.sum(normals_a * normals_b, axis=1).clip(-1, 1)
-    angles = np.expand_dims(np.pi - np.arccos(dot), axis=0)
+    angles = np.expand_dims(np.pi - np.arccos(dot), axis=0)  # # arc cos
     return angles
 
 
@@ -332,8 +339,8 @@ def symmetric_opposite_angles(mesh, edge_points):
     """
     angles_a = get_opposite_angles(mesh, edge_points, 0)
     angles_b = get_opposite_angles(mesh, edge_points, 3)
-    angles = np.concatenate((np.expand_dims(angles_a, 0), np.expand_dims(angles_b, 0)), axis=0)
-    angles = np.sort(angles, axis=0)
+    angles = np.concatenate((np.expand_dims(angles_a, 0), np.expand_dims(angles_b, 0)), axis=0)  # # 在第0维扩展
+    angles = np.sort(angles, axis=0)  # # 对两个二面角进行排序，消除歧义
     return angles
 
 
@@ -352,7 +359,7 @@ def get_edge_points(mesh):
     edge_points = np.zeros([mesh.edges_count, 4], dtype=np.int32)
     for edge_id, edge in enumerate(mesh.edges):
         edge_points[edge_id] = get_side_points(mesh, edge_id)
-        # edge_points[edge_id, 3:] = mesh.get_side_points(edge_id, 2)
+        # edge_points[edge_id, 3:] = mesh.get_side_points(edge_id, 2) # # 获取一个【edge】与另外4个【edge】形成的4个点
     return edge_points
 
 
@@ -391,31 +398,37 @@ def get_normals(mesh, edge_points, side):
     edge_b = mesh.vs[edge_points[:, 1 - side // 2]] - mesh.vs[edge_points[:, side // 2]]
     normals = np.cross(edge_a, edge_b)
     div = fixed_division(np.linalg.norm(normals, ord=2, axis=1), epsilon=0.1)
-    normals /= div[:, np.newaxis]
+    normals /= div[:, np.newaxis]  # # 单位化
     return normals
+
 
 def get_opposite_angles(mesh, edge_points, side):
     edges_a = mesh.vs[edge_points[:, side // 2]] - mesh.vs[edge_points[:, side // 2 + 2]]
     edges_b = mesh.vs[edge_points[:, 1 - side // 2]] - mesh.vs[edge_points[:, side // 2 + 2]]
 
-    edges_a /= fixed_division(np.linalg.norm(edges_a, ord=2, axis=1), epsilon=0.1)[:, np.newaxis]
-    edges_b /= fixed_division(np.linalg.norm(edges_b, ord=2, axis=1), epsilon=0.1)[:, np.newaxis]
-    dot = np.sum(edges_a * edges_b, axis=1).clip(-1, 1)
+    # edges_a /= fixed_division(np.linalg.norm(edges_a, ord=2, axis=1), epsilon=0.1)[:, np.newaxis]  # # 这里给范数+0.1 是用来防止除数为0
+    # edges_b /= fixed_division(np.linalg.norm(edges_b, ord=2, axis=1), epsilon=0.1)[:, np.newaxis]
+
+    edges_a /= np.linalg.norm(edges_a, ord=2, axis=1)[:, np.newaxis]  # # TODO: 可能回出错，如果出错，就修改回上面两行的版本。
+    edges_b /= np.linalg.norm(edges_b, ord=2, axis=1)[:, np.newaxis]  # # 因为个人觉得，0.1的修正有点矫枉过正
+
+    dot = np.sum(edges_a * edges_b, axis=1).clip(-1, 1)  # # a b cos(theta) = a·b
     return np.arccos(dot)
 
 
 def get_ratios(mesh, edge_points, side):
     edges_lengths = np.linalg.norm(mesh.vs[edge_points[:, side // 2]] - mesh.vs[edge_points[:, 1 - side // 2]],
                                    ord=2, axis=1)
-    point_o = mesh.vs[edge_points[:, side // 2 + 2]]
+    point_o = mesh.vs[edge_points[:, side // 2 + 2]]  # # o 是顶点 ab 是 edge 的两个端点
     point_a = mesh.vs[edge_points[:, side // 2]]
     point_b = mesh.vs[edge_points[:, 1 - side // 2]]
     line_ab = point_b - point_a
     projection_length = np.sum(line_ab * (point_o - point_a), axis=1) / fixed_division(
-        np.linalg.norm(line_ab, ord=2, axis=1), epsilon=0.1)
+        np.linalg.norm(line_ab, ord=2, axis=1), epsilon=0.1)  # # oa 在 edge(ab) 上投影的长度
     closest_point = point_a + (projection_length / edges_lengths)[:, np.newaxis] * line_ab
     d = np.linalg.norm(point_o - closest_point, ord=2, axis=1)
     return d / edges_lengths
+
 
 def fixed_division(to_div, epsilon):
     if epsilon == 0:

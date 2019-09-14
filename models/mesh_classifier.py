@@ -29,6 +29,9 @@ class ClassifierModel:
         self.nclasses = opt.nclasses
 
         # load/define networks
+        '''
+        ncf -> number of conv filter
+        '''
         self.net = networks.define_classifier(opt.input_nc, opt.ncf, opt.ninput_edges, opt.nclasses, opt,
                                               self.gpu_ids, opt.arch, opt.init_type, opt.init_gain)
         self.net.train(self.is_train)
@@ -45,13 +48,13 @@ class ClassifierModel:
     def set_input(self, data):
         input_edge_features = torch.from_numpy(data['edge_features']).float()
         labels = torch.from_numpy(data['label']).long()
+
         # set inputs
         self.edge_features = input_edge_features.to(self.device).requires_grad_(self.is_train)
         self.labels = labels.to(self.device)
         self.mesh = data['mesh']
         if self.opt.dataset_mode == 'segmentation' and not self.is_train:
             self.soft_label = torch.from_numpy(data['soft_label'])
-
 
     def forward(self):
         out = self.net(self.edge_features, self.mesh)
@@ -66,7 +69,6 @@ class ClassifierModel:
         out = self.forward()
         self.backward(out)
         self.optimizer.step()
-
 
 ##################
 
@@ -84,7 +86,6 @@ class ClassifierModel:
         if hasattr(state_dict, '_metadata'):
             del state_dict._metadata
         net.load_state_dict(state_dict)
-
 
     def save_network(self, which_epoch):
         """save model to disk"""

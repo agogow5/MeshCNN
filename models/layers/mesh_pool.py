@@ -188,7 +188,7 @@ class MeshPool(nn.Module):
             squared_magnitude = squared_magnitude.unsqueeze(-1)
         edge_ids = torch.arange(edges_count, device=squared_magnitude.device, dtype=torch.float32).unsqueeze(-1)
         heap = torch.cat((squared_magnitude, edge_ids), dim=-1).tolist()
-        heapify(heap)
+        heapify(heap)  # # 强制转化为 堆
         return heap
 
     @staticmethod

@@ -31,7 +31,7 @@ class MeshUnion:
         fe = fe / occurrences
         padding_b = target_edges - fe.shape[1]
         if padding_b > 0:
-            padding_b = ConstantPad2d((0, padding_b, 0, 0), 0)
+            padding_b = ConstantPad2d((0, padding_b, 0, 0), 0)  # # 上下左右 padding 的数目
             fe = padding_b(fe)
         return fe
 

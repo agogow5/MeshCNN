@@ -27,7 +27,7 @@ class BaseOptions:
         self.parser.add_argument('--init_gain', type=float, default=0.02, help='scaling factor for normal, xavier and orthogonal.')
         # general params
         self.parser.add_argument('--num_threads', default=3, type=int, help='# threads for loading data')
-        self.parser.add_argument('--gpu_ids', type=str, default='0', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
+        self.parser.add_argument('--gpu_ids', type=str, default='-1', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
         self.parser.add_argument('--name', type=str, default='debug', help='name of the experiment. It decides where to store samples and models')
         self.parser.add_argument('--checkpoints_dir', type=str, default='./checkpoints', help='models are saved here')
         self.parser.add_argument('--serial_batches', action='store_true', help='if true, takes meshes in order, otherwise takes them randomly')
@@ -49,9 +49,10 @@ class BaseOptions:
             id = int(str_id)
             if id >= 0:
                 self.opt.gpu_ids.append(id)
+
         # set gpu ids
-        # if len(self.opt.gpu_ids) > 0:
-        #     torch.cuda.set_device(self.opt.gpu_ids[0])
+        if len(self.opt.gpu_ids) > 0:
+            torch.cuda.set_device(self.opt.gpu_ids[0])
 
         args = vars(self.opt)
 

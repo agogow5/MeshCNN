@@ -29,6 +29,9 @@ if __name__ == '__main__':
             model.set_input(data)
             model.optimize_parameters()
 
+            # # debug
+            # print('len of ds: ', len(dataset), ' len of data: ', len(data), '  i: ', i)
+
             if total_steps % opt.print_freq == 0:
                 loss = model.loss
                 t = (time.time() - iter_start_time) / opt.batch_size

@@ -28,11 +28,14 @@ def get_norm_layer(norm_type='instance', num_groups=1):
     return norm_layer
 
 def get_norm_args(norm_layer, nfeats_list):
+    # print('debug:', type(norm_layer))
+    # print(norm_layer.fun.__name__)
     if hasattr(norm_layer, '__name__') and norm_layer.__name__ == 'NoNorm':
         norm_args = [{'fake': True} for f in nfeats_list]
     elif norm_layer.func.__name__ == 'GroupNorm':
         norm_args = [{'num_channels': f} for f in nfeats_list]
-    elif norm_layer.func.__name__ == 'BatchNorm':
+    # elif norm_layer.func.__name__ == 'BatchNorm': # # 不加 2d 没法跑
+    elif norm_layer.func.__name__ == 'BatchNorm2d':
         norm_args = [{'num_features': f} for f in nfeats_list]
     else:
         raise NotImplementedError('normalization layer [%s] is not found' % norm_layer.func.__name__)
@@ -93,13 +96,15 @@ def init_net(net, init_type, init_gain, gpu_ids):
     return net
 
 
+'''
+ncf  -> conv filters  [16, 32, 32]
+'''
 def define_classifier(input_nc, ncf, ninput_edges, nclasses, opt, gpu_ids, arch, init_type, init_gain):
     net = None
     norm_layer = get_norm_layer(norm_type=opt.norm, num_groups=opt.num_groups)
 
     if arch == 'mconvnet':
-        net = MeshConvNet(norm_layer, input_nc, ncf, nclasses, ninput_edges, opt.pool_res, opt.fc_n,
-                          opt.resblocks)
+        net = MeshConvNet(norm_layer, input_nc, ncf, nclasses, ninput_edges, opt.pool_res, opt.fc_n, opt.resblocks)
     elif arch == 'meshunet':
         down_convs = [input_nc] + ncf
         up_convs = ncf[::-1] + [nclasses]
@@ -124,8 +129,11 @@ def define_loss(opt):
 class MeshConvNet(nn.Module):
     """Network for learning a global shape descriptor (classification)
     """
-    def __init__(self, norm_layer, nf0, conv_res, nclasses, input_res, pool_res, fc_n,
-                 nresblocks=3):
+    '''
+    net = MeshConvNet(norm_layer, input_nc, ncf, nclasses, ninput_edges, opt.pool_res, opt.fc_n, opt.resblocks)
+    input_nc -> ninput_channels
+    '''
+    def __init__(self, norm_layer, nf0, conv_res, nclasses, input_res, pool_res, fc_n, nresblocks=3):
         super(MeshConvNet, self).__init__()
         self.k = [nf0] + conv_res
         self.res = [input_res] + pool_res
@@ -133,11 +141,11 @@ class MeshConvNet(nn.Module):
 
         for i, ki in enumerate(self.k[:-1]):
             setattr(self, 'conv{}'.format(i), MResConv(ki, self.k[i + 1], nresblocks))
+            # # 等价于self.conv0=MResConv(ki, self.k[i + 1], nresblocks)
             setattr(self, 'norm{}'.format(i), norm_layer(**norm_args[i]))
             setattr(self, 'pool{}'.format(i), MeshPool(self.res[i + 1]))
 
-
-        self.gp = torch.nn.AvgPool1d(self.res[-1])
+        self.gp = torch.nn.AvgPool1d(self.res[-1])  # # GlobalAvgPool
         # self.gp = torch.nn.MaxPool1d(self.res[-1])
         self.fc1 = nn.Linear(self.k[-1], fc_n)
         self.fc2 = nn.Linear(fc_n, nclasses)
@@ -150,10 +158,12 @@ class MeshConvNet(nn.Module):
             x = getattr(self, 'pool{}'.format(i))(x, mesh)
 
         x = self.gp(x)
+        # print(x.shape) # # torch.Size([16, 32, 1])
         x = x.view(-1, self.k[-1])
+        # print(x.shape)  # # torch.Size([16, 32])
 
-        x = F.relu(self.fc1(x))
-        x = self.fc2(x)
+        x = F.relu(self.fc1(x))  # # torch.Size([16, 100])
+        x = self.fc2(x)  # # torch.Size([16, 1])
         return x
 
 class MResConv(nn.Module):
